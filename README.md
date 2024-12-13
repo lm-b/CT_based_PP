@@ -7,9 +7,12 @@ Plantar pressure is a commonly reported measurement of foot function. Plantar pr
 
 ## Features included
 * Peak pressure 
-* Pressure-Time Integral (PTI) and Force-Time Integral (FTI)
-* use main_train_classifier_reduced.m to train the classifier on the training data extracted in step 1
-* use one of the main_deploy_classifier*.m to apply the trained classifier to the whole slide images using desired strategy (block or superpixel)
+* Pressure-Time Integral (PTI)
+* Force-Time Integral (FTI)
+* PTI from FTI (PTI_F)
+* Pressure Gradient (PPG) *dynamic only*
+* Pressure Gradient Angle (PGA) *dynamic only*
+
 
 ## Requirements 
 * MATLAB
