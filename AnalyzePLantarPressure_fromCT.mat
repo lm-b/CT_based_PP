@@ -1,0 +1,687 @@
+% Program used to calculate plantar pressure summary variables from emed plantar pressure data and a segmented CT scan (exported as bitmap with the segmentation as opaque overlays)
+% Copyright CLiMB 2023
+
+% clear the variable space & close figures - this will require a lot of RAM
+clear 
+close all
+
+% Get CT path from user input
+CTpath = uigetdir([], 'Select folder of CT files');
+
+% Get plantar pressure files from user input
+[file_n_s,pathloc_s] = uigetfile('*.lst', 'Select STATIC Plantar Pressure Files','\\foot\users\LyndaB\Scanner\PlantarPressure', 'MultiSelect', 'on' );
+
+[file_n_d,pathloc_d] = uigetfile('*.lst', 'Select DYNAMIC Plantar Pressure Files','\\foot\users\LyndaB\Scanner\PlantarPressure', 'MultiSelect', 'on' );
+
+% if single plantar pressure file, convert to a cell array for future call to cell array
+switch class(file_n_s)
+    case 'char'
+        file_n_s={file_n_s};
+end
+
+switch class(file_n_d)
+    case 'char'
+        file_n_d={file_n_d};
+end
+
+% add path to the helper function files. Here pwd gets the current working
+% directory, assuming that the helper files are located there 
+addpath([pwd '\support_files\'])
+
+% read in all bitmap files from the CT folder. *If you have a different file type, change it here.* 
+files=dir([CTpath '\*.bmp']);
+
+% read in CT images to create color volume
+for Q=1:length(files)
+    CTvol(:,:,:,Q)=imread([files(Q).folder '\' files(Q).name]);
+end
+
+%% Make colormap
+% make sure this is in the order HA, P2, P3, P4, P5, M1, M2, M3, M4, M5, MC, IC, LC, Cu, Na, (TA), CA
+% colors are hard-coded, so if you change the colors make sure to change them here !!!
+
+Cmap1=[0,0,0;
+    85 233 254; %HA          0
+85 255 85; %p2                  1
+254 253 85; %p3                 2
+170 202 255; %p4                3
+225 85 170; %p5                 4
+225 170 202; %M1                5
+191 255 0; %M2                  6
+255 128 0; %M3                  7
+225 85 85; %M4                  8
+85 89 254; %M5                  9    wrong color? 
+255 213 85; %medial cuneiform   10
+0 177 191; % intermediate cuneiform  11
+0 111 0; % lateral cuneiform    12
+255 85 255; % cuboid            13
+255 202 170; % navicular        14
+%           % talus             15
+84 237 191; % calcaneus         16
+201 169 254; % sesamoids        17
+%0   0  0; % background 
+36 31 97   % plate              18
+255 128 0]./255;  % slice text color
+%241 129 31]./255;  % slice text color
+% 36 31 97 % plate 
+
+
+% get mask volume
+for k=1:length(files)
+    im1=imread([files(k).folder '\' files(k).name]);
+    im1=im1.*uint8(1-(im1(:,:,1)==im1(:,:,2) & im1(:,:,3))); % all grayscale values have r=g=b, so 1- r=g=b will remove those to give only index 
+    IND=rgb2ind(im1(1:end-22,:,:), Cmap1);
+    maskVol2(:,:,k)=IND;
+end
+
+
+%%  get mask regions 
+
+stats=regionprops3(maskVol2, "BoundingBox","Centroid","Orientation", "PrincipalAxisLength" ); % get centriods, bounding boxes? 
+
+% optional figures - uncomment for debugging 
+% figure, imshow(squeeze(max(max(CTvol(370:end,:,:,:),[],3),[],1)));
+%hold on, plot(stats.Centroid(:,1),stats.Centroid(:,3),'rx' )
+% hold on, plot(stats.Centroid(:,3),stats.Centroid(:,1),'bo' )
+% 
+% figure, imagesc(squeeze(sum(maskVol,1)))
+% hold on, plot(stats.Centroid(:,3),stats.Centroid(:,1),'kx' )
+
+% Show bounding boxes and centroids 
+colorz=[Cmap1(2:end,:); Cmap1(1,:)];
+figure, imshow(squeeze(max(max(CTvol(370:end,:,:,:),[],3),[],1)));
+for k=1:height(stats)
+    hold on, plot([stats.BoundingBox(k,3), stats.BoundingBox(k,3)+stats.BoundingBox(k,6),stats.BoundingBox(k,3)+stats.BoundingBox(k,6), stats.BoundingBox(k,3),stats.BoundingBox(k,3)],[stats.BoundingBox(k,1), stats.BoundingBox(k,1), stats.BoundingBox(k,1)+stats.BoundingBox(k,4), stats.BoundingBox(k,1)+stats.BoundingBox(k,4),stats.BoundingBox(k,1)], 'Color', colorz(k,:))
+    hold on, plot(stats.Centroid(k,3),stats.Centroid(k,1),'.','Color', colorz(k,:))
+end 
+
+colorz=[Cmap1(2:end,:); Cmap1(1,:)];
+figure(10), imshow(squeeze(max(max(CTvol(370:end,:,:,:),[],3),[],1)));
+for k=1:height(stats)
+    hold on, plot(stats.Centroid(k,3),stats.Centroid(k,1),'.','Color', colorz(k,:), 'MarkerSize', 12)
+end 
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% make bounding boxes
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% calculate distances between centroids where needed 
+HA_P2 = [(stats.Centroid(1,3)+stats.Centroid(2,3))/2.01, (stats.Centroid(1,1)+stats.Centroid(2,1))/2; stats.BoundingBox(1,3)+stats.BoundingBox(1,6), (stats.BoundingBox(1,1)+stats.BoundingBox(2,1))/2]; 
+P2_P3 = [(stats.Centroid(2,3)+stats.Centroid(3,3))/2.0, (stats.Centroid(2,1)+stats.Centroid(3,1))/2];
+P3_P4 = [(stats.Centroid(3,3)+stats.Centroid(4,3))/2.0, (stats.Centroid(3,1)+stats.Centroid(4,1))/2];
+P4_P5 = [(stats.Centroid(4,3)+stats.Centroid(5,3))/2.01, (stats.Centroid(4,1)+stats.Centroid(5,1))/2];
+
+
+M1_M2 = [(stats.Centroid(6,3)+stats.Centroid(7,3))/2, (stats.Centroid(6,1)+stats.Centroid(7,1))/2];
+M2_M3 = [(stats.Centroid(7,3)+stats.Centroid(8,3))/2, (stats.Centroid(7,1)+stats.Centroid(8,1))/2];
+M3_M4 = [(stats.Centroid(8,3)+stats.Centroid(9,3))/2, (stats.Centroid(8,1)+stats.Centroid(9,1))/2];
+M4_M5 = [(stats.Centroid(9,3)+stats.Centroid(10,3))/2, (stats.Centroid(9,1)+stats.Centroid(10,1))/2];
+
+% set reduction & extension parameters 
+red = 0.02;
+red2=0.94;
+red3=.82;
+extd = 1.21;
+extd2=1.034;
+extd3=1.015;
+
+%% calculate bounding boxes and display them on overlay of CT projection
+figure(6), imshow(permute(squeeze(sum(CTvol(360:end,:,:,:),1)), [1,3,2])./22000) % 300000
+%% HA bounding box 
+BB_HAx = [HA_P2(1,1);HA_P2(2,1)*extd2;stats.BoundingBox(1,3)+stats.BoundingBox(1,6)*extd2; HA_P2(1,1);HA_P2(1,1);]';
+BB_HAy = [HA_P2(1,2)/extd2;HA_P2(2,2);stats.BoundingBox(6,1)+stats.BoundingBox(6,4)*extd ;stats.BoundingBox(6,1)+stats.BoundingBox(6,4)*extd;HA_P2(1,2) ]';
+figure(6), hold on, plot(BB_HAx, BB_HAy, 'Color', colorz(1,:)) 
+%Toes bounding box 
+BB_Tx = [HA_P2(1,1);HA_P2(2,1)*extd2;stats.BoundingBox(3,3)+stats.BoundingBox(3,6)*extd;stats.BoundingBox(5,3)+stats.BoundingBox(5,6)*1.44; stats.Centroid(5,3);P4_P5(1,1)*extd3;P3_P4(1,1)*extd3;P2_P3(1,1)*extd3;HA_P2(1,1);]';
+BB_Ty = [HA_P2(1,2)/extd2;HA_P2(2,2);stats.BoundingBox(3,1); stats.BoundingBox(5,1);stats.BoundingBox(5,1)*red3;P4_P5(1,2);P3_P4(1,2);P2_P3(1,2);HA_P2(1,2) ]';
+figure(6), hold on, plot(BB_Tx, BB_Ty, 'Color', colorz(4,:)) 
+%M1 bounding box 
+BB_M1x = [M1_M2(:,1)*red2;HA_P2(1,1); HA_P2(1,1);M1_M2(1,1)*red2;M1_M2(1,1)*red2]';
+BB_M1y = [M1_M2(:,2);HA_P2(1,2)/extd2;stats.BoundingBox(6,1)+stats.BoundingBox(6,4)*extd;stats.BoundingBox(6,1)+stats.BoundingBox(6,4)*extd;M1_M2(1,2) ]';
+figure(6), hold on, plot(BB_M1x, BB_M1y, 'Color', colorz(6,:)) 
+%M2 bounding box 
+BB_M2x = [M2_M3(:,1)*red2;P2_P3(1,1)*extd3;HA_P2(1,1); M1_M2(1,1)*red2;M2_M3(1,1)*red2;]';
+BB_M2y = [M2_M3(:,2);P2_P3(1,2);HA_P2(1,2)/extd2;M1_M2(1,2);M2_M3(1,2) ]';
+figure(6), hold on, plot(BB_M2x, BB_M2y, 'Color', colorz(7,:)) 
+%M3 bounding box 
+BB_M3x = [M3_M4(:,1)*red2;P3_P4(1,1)*extd3;P2_P3(1,1)*extd3; M2_M3(1,1)*red2;M3_M4(1,1)*red2;]';
+BB_M3y = [M3_M4(:,2);P3_P4(1,2);P2_P3(1,2);M2_M3(1,2);M3_M4(1,2) ]';
+figure(6), hold on, plot(BB_M3x, BB_M3y, 'Color', colorz(8,:)) 
+%M4 bounding box 
+BB_M4x = [M4_M5(:,1);P4_P5(1,1)*extd3;P3_P4(1,1)*extd3; M3_M4(1,1)*red2;M4_M5(1,1);]';
+BB_M4y = [M4_M5(:,2);P4_P5(1,2);P3_P4(1,2);M3_M4(1,2);M4_M5(1,2) ]';
+figure(6), hold on, plot(BB_M4x, BB_M4y, 'Color', colorz(9,:)) 
+%M5 bounding box 
+BB_M5x = [M4_M5(:,1);P4_P5(1,1)*extd3;stats.Centroid(5,3); stats.Centroid(10,3);M4_M5(1,1)]';
+BB_M5y = [M4_M5(:,2);P4_P5(1,2);stats.BoundingBox(5,1)*red3;stats.BoundingBox(10,1)*red3;M4_M5(1,2) ]';
+figure(6), hold on, plot(BB_M5x, BB_M5y, 'Color', colorz(10,:)) 
+%LM bounding box 
+%BB_LMx = [M4_M5(:,1);M3_M4(:,1)*red2;M2_M3(:,1)*red2;stats.BoundingBox(16,3)+stats.BoundingBox(16,6); stats.BoundingBox(16,3)+stats.BoundingBox(16,6);stats.Centroid(10,3);M4_M5(1,1);]';
+BB_LMx = [M4_M5(:,1);M3_M4(:,1)*red2;M2_M3(:,1)*red2;stats.BoundingBox(16,3)+stats.BoundingBox(16,6); stats.BoundingBox(14,3);stats.Centroid(10,3);M4_M5(1,1);]';
+BB_LMy = [M4_M5(:,2);M3_M4(:,2);M2_M3(:,2);stats.Centroid(12,1);(stats.BoundingBox(16,1)+stats.BoundingBox(10,1))/2*red3;stats.BoundingBox(10,1)*red3;M4_M5(1,2) ]';
+figure(6), hold on, plot(BB_LMx, BB_LMy, 'Color', colorz(14,:)) 
+%MM bounding box 
+BB_MMx = [M2_M3(:,1)*red2;M1_M2(1,1)*red2;M1_M2(1,1)*red2;stats.BoundingBox(16,3)+stats.BoundingBox(16,6);stats.BoundingBox(16,3)+stats.BoundingBox(16,6);M2_M3(1,1)*red2;]';
+BB_MMy = [M2_M3(:,2);M1_M2(1,2);stats.BoundingBox(6,1)+stats.BoundingBox(6,4)*extd;stats.BoundingBox(16,1)+stats.BoundingBox(16,4);stats.Centroid(12,1);M2_M3(1,2) ]';
+figure(6), hold on, plot(BB_MMx, BB_MMy, 'Color', colorz(15,:)) 
+%HF bounding box 
+%BB_HFx = [stats.BoundingBox(16,3)*red, stats.BoundingBox(16,3)+stats.BoundingBox(16,6),stats.BoundingBox(16,3)+stats.BoundingBox(16,6), stats.BoundingBox(16,3)*red,stats.BoundingBox(16,3)*red];
+BB_HFx = [stats.BoundingBox(16,3)*red, stats.BoundingBox(14,3),stats.BoundingBox(16,3)+stats.BoundingBox(16,6),stats.BoundingBox(16,3)+stats.BoundingBox(16,6), stats.BoundingBox(16,3)*red,stats.BoundingBox(16,3)*red];
+BB_HFy = [stats.BoundingBox(16,1), (stats.BoundingBox(16,1)+stats.BoundingBox(10,1))/2*red3,stats.Centroid(12,1), stats.BoundingBox(16,1)+stats.BoundingBox(16,4), stats.BoundingBox(16,1)+stats.BoundingBox(16,4)*extd, stats.BoundingBox(16,1)];
+figure(6), hold on, plot(BB_HFx, BB_HFy, 'Color', colorz(16,:))
+
+%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%% start CT- PP analysis%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Register CT to PP
+% runPP=1;
+% RunAnotherTrial='no';
+cutoff=360;
+CTproj=permute(squeeze(sum(CTvol(cutoff:end,:,:,:),1)), [3,1,2]); % 360 empirically determinied 
+
+for q =1:length(file_n_s)+length(file_n_d) 
+
+    if q<=length(file_n_s)
+        PPpath=pathloc_s; PPfile=file_n_s{q};
+        trial_type = 'static';
+    else
+        PPpath=pathloc_s; PPfile=file_n_d{q-length(file_n_s)};
+        trial_type = 'dynamic';
+    end
+    [Pressure,Force,Header]=  read_emed_lst([PPpath PPfile]);
+% load in PP data; crop PP data since it often doesn't take up entire area
+figure(2), imagesc(max(Pressure, [],3));
+PP=max(Pressure, [],3);
+PPCropparams=regionprops(PP>0, 'BoundingBox');
+% if plantar pressure is discconected, recursively move through larger
+% structing elements until PP is connected to calc bounding box 
+if length(PPCropparams)>1
+    rad=1;
+    while length(PPCropparams)>1
+        rad=rad+1;
+        PPCropparams=regionprops(imclose(PP>0, strel('disk',rad)), 'BoundingBox');
+    end
+end
+PP=PP(floor(PPCropparams(1).BoundingBox(2)):ceil(PPCropparams(1).BoundingBox(2)+PPCropparams(1).BoundingBox(4)),floor(PPCropparams(1).BoundingBox(1))-2:ceil(PPCropparams(1).BoundingBox(1)+PPCropparams(1).BoundingBox(3))+4);
+figure(2), imagesc(PP)
+
+%% Find rotation CT 
+% CTBW=sum(permute(squeeze(sum(CTvol(360:end,:,:,:),1)), [1,3,2])./29000,3)>0.41; % 30000, 0.5
+CTBW=imbinarize(sum(permute(squeeze(sum(CTvol(cutoff:end,:,:,:),1)), [1,3,2])./29000,3));
+countr=1;
+PPBW=PP>0;
+clear score
+for angled=-14:10
+%PPBW=PP>0;
+CTBW2=imrotate(fliplr(flipud(CTBW')),angled, 'crop');
+score(countr)=sum(sum(abs(imresize(PPBW,size(CTBW2), 'box')-CTBW2)))/numel(CTBW2);
+countr=countr+1;
+
+end
+[m, I]=min(score);
+angled=I-15;
+CTBW2=imrotate(fliplr(flipud(CTBW')),angled, 'crop');
+
+figure(2), imshowpair(imresize(PPBW,size(CTBW2), 'box'), CTBW2)
+% figure, imagesc(imresize(PPBW,size(CTBW2), 'box')*2+CTBW2)
+
+%% avoid rotating PP to keep PP intact, make masking calculations easier
+% sizeCT=size(permute(squeeze(sum(CTvol(360:end,:,:,:),1)), [1,3,2]));
+sizeCT=size(CTBW);
+sizePP=fliplr(size(PP));
+% calculate padding required for overlap
+scaleFac=sizeCT(1:2)./sizePP;
+% find bounding box of CT outline. If not connected (CT scan dark), and get
+% multiple areas out, aggregate areas 
+clear newBounds
+CTbounds=regionprops(bwareaopen(CTBW2, 10), 'BoundingBox'); % 4000
+if length(CTbounds)>1
+    for v = 1:length(CTbounds)
+        newBounds(v,:)=[CTbounds(v).BoundingBox(1:2), CTbounds(v).BoundingBox(1:2)+CTbounds(v).BoundingBox(3:4)];
+    end
+    newBounds=[min(newBounds) max(newBounds)];
+else
+    newBounds=[CTbounds.BoundingBox(1:2), CTbounds.BoundingBox(1:2)+CTbounds.BoundingBox(3:4) CTbounds.BoundingBox(1:2), CTbounds.BoundingBox(1:2)+CTbounds.BoundingBox(3:4)];
+end
+
+%get PP bounding box. If not connected (common for static) & get multiple areas out, aggregate areas
+PPbounds=regionprops(bwareaopen(PPBW,2), 'BoundingBox');
+if length(PPbounds)>1
+    for v = 1:length(PPbounds)
+        newPBounds(v,:)=[PPbounds(v).BoundingBox(1:2), PPbounds(v).BoundingBox(1:2)+PPbounds(v).BoundingBox(3:4)];
+    end
+    PPbounds=[min(newPBounds) max(newPBounds)];
+else
+    PPbounds=[PPbounds.BoundingBox(1:2), PPbounds.BoundingBox(1:2)+PPbounds.BoundingBox(3:4) PPbounds.BoundingBox(1:2), PPbounds.BoundingBox(1:2)+PPbounds.BoundingBox(3:4)];
+end
+
+dDim=[newBounds(1:2)-.5 ((newBounds(7:8)+.5) - (newBounds(1:2)-.5))] - ([PPbounds(1:2)-.5 (PPbounds(7:8)-.5)- (PPbounds(1:2)-.5 )].*[scaleFac scaleFac]);%[dL, dT, dR, dB]
+PressureData(q).dDim=dDim;
+clear CTbounds PPbounds scaleFac
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Note 7/12/23 - this is now automatic so don't have to
+%   change anymore, but if you want to manually register, this would be the
+%   place to do it 
+totaly = sizeCT(1);%+dDim(3); % n cols (400 dim)
+totalx = sizeCT(2);%+dDim(4); % nrows (900 dim)
+theta=-angled+1;
+sizeCT2=[sizeCT(1)+dDim(3) sizeCT(2)+dDim(4)];
+scaleFac=sizeCT2./sizePP;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+R=[cosd(theta), -sind(theta); sind(theta), cosd(theta)];
+
+figure(8), set(gcf,'Position', [400 250 500 700]), imagesc(PP), colormap([0.8 0.8 0.8;jet(60)])
+% conversion explanation:
+    % 1)subtract from new total size of image to get reverse coordinates (fliplr // flipud)
+    % 2)rotate 90 degrees (swap x and y coordinates)
+    % 3)add differences betwee CT and PP top left corner to get translation between PP and CT
+    % 4)apply new scaling calculated with diferences between botto right
+    % corners of CT and PP bounding boxes
+% HA bounding box 
+AA= R*([totaly-BB_HAy;totalx-BB_HAx]-(sizeCT2'/2))+(sizeCT2'/2); % first, flip LR/UD, then rotate
+AA=(AA-dDim(1:2)')./scaleFac';                              % then apply offsets and scale
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(1,:)/1.4) 
+HAmask=roipoly(PP,AA(1,:), AA(2,:));
+% %Toes bounding box 
+AA= R*([totaly-BB_Ty;totalx-BB_Tx]-(sizeCT2'/2))+(sizeCT2'/2);
+AA=(AA-dDim(1:2)')./scaleFac';
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(4,:)/1.4) 
+Tmask=roipoly(PP,AA(1,:), AA(2,:));
+%M1 bounding box 
+AA= R*([totaly-BB_M1y;totalx-BB_M1x]-(sizeCT2'/2))+(sizeCT2'/2);
+AA=(AA-dDim(1:2)')./scaleFac';
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(6,:)) 
+M1mask=roipoly(PP,AA(1,:), AA(2,:));
+%M2 bounding box 
+AA= R*([totaly-BB_M2y;totalx-BB_M2x]-(sizeCT2'/2))+(sizeCT2'/2);
+AA=(AA-dDim(1:2)')./scaleFac';
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(7,:)/1.4) 
+M2mask=roipoly(PP,AA(1,:), AA(2,:));
+%M3 bounding box 
+AA= R*([totaly-BB_M3y;totalx-BB_M3x]-(sizeCT2'/2))+(sizeCT2'/2);
+AA=(AA-dDim(1:2)')./scaleFac';
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(8,:)) 
+M3mask=roipoly(PP,AA(1,:), AA(2,:));
+%M4 bounding box 
+AA= R*([totaly-BB_M4y;totalx-BB_M4x]-(sizeCT2'/2))+(sizeCT2'/2);
+AA=(AA-dDim(1:2)')./scaleFac';
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(9,:)) 
+M4mask=roipoly(PP,AA(1,:), AA(2,:));
+%M5 bounding box 
+AA= R*([totaly-BB_M5y;totalx-BB_M5x]-(sizeCT2'/2))+(sizeCT2'/2);
+AA=(AA-dDim(1:2)')./scaleFac';
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(10,:)) 
+M5mask=roipoly(PP,AA(1,:), AA(2,:));
+%Lateral midfoot bounding box 
+AA= R*([totaly-BB_LMy;totalx-BB_LMx]-(sizeCT2'/2))+(sizeCT2'/2);
+AA=(AA-dDim(1:2)')./scaleFac';
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(12,:)) 
+LMmask=roipoly(PP,AA(1,:), AA(2,:));
+%medial midfoot bounding box 
+AA= R*([totaly-BB_MMy;totalx-BB_MMx]-(sizeCT2'/2))+(sizeCT2'/2);
+AA=(AA-dDim(1:2)')./scaleFac';
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(14,:)/1.4) 
+MMmask=roipoly(PP,AA(1,:), AA(2,:));
+%Toes bounding box 
+AA= R*([totaly-BB_HFy;totalx-BB_HFx]-(sizeCT2'/2))+(sizeCT2'/2);
+AA=(AA-dDim(1:2)')./scaleFac';
+figure(8), hold on, plot(AA(1,:), AA(2,:),'LineWidth', 1.9, 'Color', colorz(16,:)/1.4) 
+HFmask=roipoly(PP,AA(1,:), AA(2,:));
+
+axis off
+
+
+%% PP anaylsis
+
+    
+switch trial_type
+    case 'dynamic'
+        % dynamic only
+        %--------------------------------------------------------------------------
+        %%%%%%% find peak and mean pressures  %%%%%%%%
+        % A=max(Pressure,[],3);
+        [PressureData(q).PeakPressure, idx] =max(Pressure,[],3);
+        idx(idx==1)=NaN; % use this index to crop gait line for CoP?
+        %             PressureData(q).MeanPressure=Pressure(:,:, round(mean(idx(:), 'omitnan' )));
+        %             PressureData(q).MedianPressure=Pressure(:,:,median(idx(:), 'omitnan' ));
+        
+        %%%%%%%%% find pressure-time integral %%%%%%%%%%%%
+        % novel formula: PTI = sum(PP_i*t_i)
+        dt = .010; % 10 ms sampling = .01s sampling
+        PressureData(q).PTI=sum(Pressure,3)*dt; % gives the pressure time integral for each sensor
+        PressureData(q).PTI_units='kPa-s';
+        %%%%%% find force time integral %%%%%%%%%%
+        PressureData(q).FTI=sum(Pressure.*(.25/10),3)*dt; % gives the force time integral for each sensor
+        PressureData(q).FTI_units='N-s';
+        
+        Peakformasking=PressureData(q).PeakPressure(floor(PPCropparams(1).BoundingBox(2)):ceil(PPCropparams(1).BoundingBox(2)+PPCropparams(1).BoundingBox(4)),floor(PPCropparams(1).BoundingBox(1))-2:ceil(PPCropparams(1).BoundingBox(1)+PPCropparams(1).BoundingBox(3))+4);
+        [PressureData(q).Peak_regions(1,1) PressureData(q).Peak_idx(1)]= max(Peakformasking(:).*HAmask(:));
+        [PressureData(q).Peak_regions(2,1) PressureData(q).Peak_idx(2)]= max(Peakformasking(:).*Tmask(:));
+        [PressureData(q).Peak_regions(3,1) PressureData(q).Peak_idx(3)]= max(Peakformasking(:).*M1mask(:));
+        [PressureData(q).Peak_regions(4,1) PressureData(q).Peak_idx(4)]= max(Peakformasking(:).*M2mask(:));
+        [PressureData(q).Peak_regions(5,1) PressureData(q).Peak_idx(5)]= max(Peakformasking(:).*M3mask(:));
+        [PressureData(q).Peak_regions(6,1) PressureData(q).Peak_idx(6)]= max(Peakformasking(:).*M4mask(:));
+        [PressureData(q).Peak_regions(7,1) PressureData(q).Peak_idx(7)]= max(Peakformasking(:).*M5mask(:));
+        [PressureData(q).Peak_regions(8,1) PressureData(q).Peak_idx(8)]= max(Peakformasking(:).*LMmask(:));
+        [PressureData(q).Peak_regions(9,1) PressureData(q).Peak_idx(9)]= max(Peakformasking(:).*MMmask(:));
+        [PressureData(q).Peak_regions(10,1) PressureData(q).Peak_idx(10)]= max(Peakformasking(:).*HFmask(:));
+        
+        PTIformasking=PressureData(q).PTI(floor(PPCropparams(1).BoundingBox(2)):ceil(PPCropparams(1).BoundingBox(2)+PPCropparams(1).BoundingBox(4)),floor(PPCropparams(1).BoundingBox(1))-2:ceil(PPCropparams(1).BoundingBox(1)+PPCropparams(1).BoundingBox(3))+4);
+        PressureData(q).PTI_regions(1) = sum(sum(PTIformasking.*HAmask));
+        PressureData(q).PTI_regions(2) = sum(sum(PTIformasking.*Tmask));
+        PressureData(q).PTI_regions(3) = sum(sum(PTIformasking.*M1mask));
+        PressureData(q).PTI_regions(4) = sum(sum(PTIformasking.*M2mask));
+        PressureData(q).PTI_regions(5) = sum(sum(PTIformasking.*M3mask));
+        PressureData(q).PTI_regions(6) = sum(sum(PTIformasking.*M4mask));
+        PressureData(q).PTI_regions(7) = sum(sum(PTIformasking.*M5mask));
+        PressureData(q).PTI_regions(8) = sum(sum(PTIformasking.*LMmask));
+        PressureData(q).PTI_regions(9) = sum(sum(PTIformasking.*MMmask));
+        PressureData(q).PTI_regions(10) = sum(sum(PTIformasking.*HFmask));
+        
+        % not sure if should convert zeros to NaN for this?
+        PTIformasking(PTIformasking<1)=NaN;
+        PressureData(q).PTI_F_regions(1) = mean(PTIformasking.*HAmask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(2) = mean(PTIformasking.*Tmask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(3) = mean(PTIformasking.*M1mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(4) = mean(PTIformasking.*M2mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(5) = mean(PTIformasking.*M3mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(6) = mean(PTIformasking.*M4mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(7) = mean(PTIformasking.*M5mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(8) = mean(PTIformasking.*LMmask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(9) = mean(PTIformasking.*MMmask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(10) = mean(PTIformasking.*HFmask,'all', 'omitnan');
+        
+        FTIformasking=PressureData(q).FTI(floor(PPCropparams(1).BoundingBox(2)):ceil(PPCropparams(1).BoundingBox(2)+PPCropparams(1).BoundingBox(4)),floor(PPCropparams(1).BoundingBox(1))-2:ceil(PPCropparams(1).BoundingBox(1)+PPCropparams(1).BoundingBox(3))+4);
+        PressureData(q).FTI_regions(1) = sum(sum(FTIformasking.*HAmask));
+        PressureData(q).FTI_regions(2) = sum(sum(FTIformasking.*Tmask));
+        PressureData(q).FTI_regions(3) = sum(sum(FTIformasking.*M1mask));
+        PressureData(q).FTI_regions(4) = sum(sum(FTIformasking.*M2mask));
+        PressureData(q).FTI_regions(5) = sum(sum(FTIformasking.*M3mask));
+        PressureData(q).FTI_regions(6) = sum(sum(FTIformasking.*M4mask));
+        PressureData(q).FTI_regions(7) = sum(sum(FTIformasking.*M5mask));
+        PressureData(q).FTI_regions(8) = sum(sum(FTIformasking.*LMmask));
+        PressureData(q).FTI_regions(9) = sum(sum(FTIformasking.*MMmask));
+        PressureData(q).FTI_regions(10) = sum(sum(FTIformasking.*HFmask));
+        
+        PressureData(q).RegionOrder = {'HA', 'Toes', 'M1', 'M2', 'M3','M4','M5','LM','MM','HF'};
+        
+        PressureData(q).maskarea(1) = sum(sum((PTIformasking.*HAmask)>0));
+        PressureData(q).maskarea(2) = sum(sum((PTIformasking.*Tmask)>0));
+        PressureData(q).maskarea(3) = sum(sum((PTIformasking.*M1mask)>0));
+        PressureData(q).maskarea(4) = sum(sum((PTIformasking.*M2mask)>0));
+        PressureData(q).maskarea(5) = sum(sum((PTIformasking.*M3mask)>0));
+        PressureData(q).maskarea(6) = sum(sum((PTIformasking.*M4mask)>0));
+        PressureData(q).maskarea(7) = sum(sum((PTIformasking.*M5mask)>0));
+        PressureData(q).maskarea(8) = sum(sum((PTIformasking.*LMmask)>0));
+        PressureData(q).maskarea(9) = sum(sum((PTIformasking.*MMmask)>0));
+        PressureData(q).maskarea(10) = sum(sum((PTIformasking.*HFmask)>0));
+        
+        %  %%%%%% pressure gradient calculation %%%%%%
+        %  %%%%%% pressure gradient calculation %%%%%%
+        for r=1:size(Pressure,3) % calculate for each frame
+            % remove gradient around the edges of the plantar pressure
+            Peak_inst(r) = max(Pressure(:,:,r),[],'all');
+            PR_grad = Pressure(:,:,r)+(Pressure(:,:,r)<1).*40;
+            % calculate vertical, horizontal, and diagonal differences
+            diff1=diff(PR_grad,1,1)./5; % R - horiz, divide by snesor side length - report in kPa/mm
+            diff2=diff(PR_grad,1,2)./5; % top - vert, divide by snesor side length - report in kPa/mm
+            RD=conv2(PR_grad, [0 -1; 1 0])./7.071; % top right -> bottom left diagonal , divide by sqrt(sum(senseor side lengths^2)) - report in kPa/mm
+            LD=conv2(PR_grad, [-1 0; 0 1])./7.071; % top left -> bottom right diagonal , divide by sqrt(sum(senseor side lengths^2)) - report in kPa/mm
+            
+            % convert to middle pixel - outer pixels & shift so that
+            % val;ues line up with original center pixel
+            diffs(:,:,1)=-LD(1:end-1, 1:end-1);  % diff with top L
+            diffs(:,:,2)=LD(2:end, 2:end);  % diff with bottom R
+            diffs(:,:,3)=-RD(1:end-1, 2:end); % diff with top R
+            diffs(:,:,4)=RD(2:end, 1:end-1); % diff with bottom L
+            diffs(:,:,5)=-padarray(diff1, [1,0],0,'pre'); % diff with px above
+            diffs(:,:,6)=padarray(diff1, [1,0],0,'post'); % diff with px below
+            diffs(:,:,7)=-padarray(diff2, [0,1],0,'pre'); % diff with pix to L
+            diffs(:,:,8)=padarray(diff2, [0,1],0,'post'); % diff with px to R
+            
+            [MPPG(:,:,r) AngleIdx(:,:,r)]=max(diffs,[],3);
+            figure(4), imagesc(MPPG(:,:,r).*(Pressure(:,:,r)>0))
+        end
+        anglemap=[135 315 45 225 90 270 180 0];
+        Angles=anglemap(AngleIdx);
+        PPGA = diff(padarray(Angles, [0 0 1], 'pre'),1,3); % pressure gradient angle
+        useFrames=(Peak_inst./(max(Peak_inst)))>0.5;
+        % not sure how to calculate PGA?
+        PGA_map=sum(abs(PPGA(:,:,useFrames)),3)./sum(useFrames); %? This is the average - which is what's been reported previously
+        %max(PPGA(:,:,useFrames),[],3); %?
+        
+        PressureData(q).MMPPG = squeeze(max(max(MPPG,[],1),[],2));
+        
+        PPGformasking=max(MPPG,[],3);
+        PPGformasking=PPGformasking(floor(PPCropparams(1).BoundingBox(2)):ceil(PPCropparams(1).BoundingBox(2)+PPCropparams(1).BoundingBox(4)),floor(PPCropparams(1).BoundingBox(1))-2:ceil(PPCropparams(1).BoundingBox(1)+PPCropparams(1).BoundingBox(3))+4);
+        PressureData(q).MPPG_map=PPGformasking;
+        [PressureData(q).MPPG_regions(1) PressureData(q).MPG_idx(1)] = max(PPGformasking(:).*HAmask(:));
+        [PressureData(q).MPPG_regions(2) PressureData(q).MPG_idx(2)]= max(PPGformasking(:).*Tmask(:));
+        [PressureData(q).MPPG_regions(3) PressureData(q).MPG_idx(3)]= max(PPGformasking(:).*M1mask(:));
+        [PressureData(q).MPPG_regions(4) PressureData(q).MPG_idx(4)]= max(PPGformasking(:).*M2mask(:));
+        [PressureData(q).MPPG_regions(5) PressureData(q).MPG_idx(5)]= max(PPGformasking(:).*M3mask(:));
+        [PressureData(q).MPPG_regions(6) PressureData(q).MPG_idx(6)]= max(PPGformasking(:).*M4mask(:));
+        [PressureData(q).MPPG_regions(7) PressureData(q).MPG_idx(7)]= max(PPGformasking(:).*M5mask(:));
+        [PressureData(q).MPPG_regions(8) PressureData(q).MPG_idx(8)]= max(PPGformasking(:).*LMmask(:));
+        [PressureData(q).MPPG_regions(9) PressureData(q).MPG_idx(9)]= max(PPGformasking(:).*MMmask(:));
+        [PressureData(q).MPPG_regions(10) PressureData(q).MPG_idx(10)]= max(PPGformasking(:).*HFmask(:));
+        
+        PGA_mapformasking=PGA_map(floor(PPCropparams(1).BoundingBox(2)):ceil(PPCropparams(1).BoundingBox(2)+PPCropparams(1).BoundingBox(4)),floor(PPCropparams(1).BoundingBox(1))-2:ceil(PPCropparams(1).BoundingBox(1)+PPCropparams(1).BoundingBox(3))+4);
+        PressureData(q).PGA_map=PGA_mapformasking;
+        PGA_mapformasking(PGA_mapformasking==0)=NaN;
+        [PressureData(q).PGA_regions(1) PressureData(q).PGA_idx(1)] = max(PGA_mapformasking(:).*HAmask(:));
+        [PressureData(q).PGA_regions(2) PressureData(q).PGA_idx(2)]= max(PGA_mapformasking(:).*Tmask(:));
+        [PressureData(q).PGA_regions(3) PressureData(q).PGA_idx(3)]= max(PGA_mapformasking(:).*M1mask(:));
+        [PressureData(q).PGA_regions(4) PressureData(q).PGA_idx(4)]= max(PGA_mapformasking(:).*M2mask(:));
+        [PressureData(q).PGA_regions(5) PressureData(q).PGA_idx(5)]= max(PGA_mapformasking(:).*M3mask(:));
+        [PressureData(q).PGA_regions(6) PressureData(q).PGA_idx(6)]= max(PGA_mapformasking(:).*M4mask(:));
+        [PressureData(q).PGA_regions(7) PressureData(q).PGA_idx(7)]= max(PGA_mapformasking(:).*M5mask(:));
+        [PressureData(q).PGA_regions(8) PressureData(q).PGA_idx(8)]= max(PGA_mapformasking(:).*LMmask(:));
+        [PressureData(q).PGA_regions(9) PressureData(q).PGA_idx(9)]= max(PGA_mapformasking(:).*MMmask(:));
+        [PressureData(q).PGA_regions(10) PressureData(q).PGA_idx(10)]= max(PGA_mapformasking(:).*HFmask(:));
+        
+        figure(9), subplot(1,3,1),imagesc(PPGformasking)
+        [y,x]=ind2sub(size(Peakformasking), PressureData(q).MPG_idx);
+        hold on, plot(x,y,'ko');
+        
+        subplot(1,3,2),imagesc(PGA_mapformasking)
+        [y,x]=ind2sub(size(Peakformasking), PressureData(q).PGA_idx);
+        hold on, plot(x,y,'o', 'Color',[0.65 0.2 0.6], 'LineWidth', 1.2);
+        
+        
+        subplot(1,3,3),imagesc(Peakformasking)
+        [y,x]=ind2sub(size(Peakformasking), PressureData(q).MPG_idx);
+        hold on, plot(x,y,'ko');
+        [y,x]=ind2sub(size(Peakformasking), PressureData(q).PGA_idx);
+        hold on, plot(x,y,'o', 'Color',[0.65 0.2 0.6], 'LineWidth', 1.2);
+        
+        
+        % HA bounding box
+        AA= R*([totaly-BB_HAy;totalx-BB_HAx]-(sizeCT2'/2))+(sizeCT2'/2); % first, flip LR/UD, then rotate
+        AA=(AA-dDim(1:2)')./scaleFac';                              % then apply offsets and scale
+        figure(9), subplot(1,3,1), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(1,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(1,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(1,:))
+        % %Toes bounding box
+        AA= R*([totaly-BB_Ty;totalx-BB_Tx]-(sizeCT2'/2))+(sizeCT2'/2);
+        AA=(AA-dDim(1:2)')./scaleFac';
+        figure(9), subplot(1,3,1),hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(4,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(4,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(4,:))
+        %M1 bounding box
+        AA= R*([totaly-BB_M1y;totalx-BB_M1x]-(sizeCT2'/2))+(sizeCT2'/2);
+        AA=(AA-dDim(1:2)')./scaleFac';
+        figure(9), subplot(1,3,1),hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(6,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(6,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(6,:))
+        %M2 bounding box
+        AA= R*([totaly-BB_M2y;totalx-BB_M2x]-(sizeCT2'/2))+(sizeCT2'/2);
+        AA=(AA-dDim(1:2)')./scaleFac';
+        figure(9), subplot(1,3,1),hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(7,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(7,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(7,:))
+        %M3 bounding box
+        AA= R*([totaly-BB_M3y;totalx-BB_M3x]-(sizeCT2'/2))+(sizeCT2'/2);
+        AA=(AA-dDim(1:2)')./scaleFac';
+        figure(9), subplot(1,3,1),hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(8,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(8,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(8,:))
+        %M4 bounding box
+        AA= R*([totaly-BB_M4y;totalx-BB_M4x]-(sizeCT2'/2))+(sizeCT2'/2);
+        AA=(AA-dDim(1:2)')./scaleFac';
+        figure(9), subplot(1,3,1),hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(9,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(9,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(9,:))
+        %M5 bounding box
+        AA= R*([totaly-BB_M5y;totalx-BB_M5x]-(sizeCT2'/2))+(sizeCT2'/2);
+        AA=(AA-dDim(1:2)')./scaleFac';
+        figure(9), subplot(1,3,1),hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(10,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(10,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(10,:))
+        %Lateral midfoot bounding box
+        AA= R*([totaly-BB_LMy;totalx-BB_LMx]-(sizeCT2'/2))+(sizeCT2'/2);
+        AA=(AA-dDim(1:2)')./scaleFac';
+        figure(9), subplot(1,3,1), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(12,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(12,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(12,:))
+        %medial midfoot bounding box
+        AA= R*([totaly-BB_MMy;totalx-BB_MMx]-(sizeCT2'/2))+(sizeCT2'/2);
+        AA=(AA-dDim(1:2)')./scaleFac';
+        figure(9), subplot(1,3,1),hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(14,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(14,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(14,:))
+        %Toes bounding box
+        AA= R*([totaly-BB_HFy;totalx-BB_HFx]-(sizeCT2'/2))+(sizeCT2'/2);
+        AA=(AA-dDim(1:2)')./scaleFac';
+        figure(9), subplot(1,3,1),hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(16,:))
+        subplot(1,3,2), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(6,:))
+        subplot(1,3,3), hold on, plot(AA(1,:), AA(2,:), 'Color', colorz(6,:))
+        
+    case 'static'
+        % static only
+        %--------------------------------------------------------------------------
+        %%%%%%%% remove initial step-on frames %%%%%%%
+        pressuremask=max(Pressure,[],3)>0;
+        for k=1:size(Pressure,3)
+            A=Pressure(:,:,k);
+            B(k)=sum(A(pressuremask)<1);
+        end
+        
+        % filter the average numbers of pixels in the max plantar pressure mask
+        % that aren't used in a given frame to smooth curve
+        windowSize = 50;
+        b = (1/windowSize)*ones(1,windowSize);
+        a = 1;
+        y = filter(b,a,B);
+        % use the derivative to find where the line starts to become flat This
+        % should be 'steady state'
+        steadystatestart_idx = find(abs(diff(y))<0.001,1);
+        
+        P2=Pressure(:,:,steadystatestart_idx:end); % pressure matrix without initial step on frames
+            % ^ also removing border to fit CT scan better 
+        %%%%%%% find peak and mean pressures  %%%%%%%%
+        % A=max(Pressure,[],3);
+        [PressureData(q).PeakPressure, idx] =max(P2,[],3);
+        idx(idx.*pressuremask<1)=NaN; % convert all pixels outside the foot area to NaN so they aren't counted in the calculation    
+        
+        %%%%%%%%% find pressure-time integral %%%%%%%%%%%%
+        % novel formula: PTI = sum(PP_i*t_i)
+        dt = .010; % 10 ms sampling = .01s sampling
+        PressureData(q).PTI=sum(P2,3)*dt; % gives the pressure time integral for each sensor
+        PressureData(q).PTI_units='kPa-s';
+        %%%%%% find force time integral %%%%%%%%%%
+        PressureData(q).FTI=sum(P2.*(.25/10),3)*dt; % gives the force time integral for each sensor
+        PressureData(q).FTI_units='N-s';
+        
+        
+        %%%%%%% mask analysis %%%%%%%%%%
+        Peakformasking=PressureData(q).PeakPressure(floor(PPCropparams(1).BoundingBox(2)):ceil(PPCropparams(1).BoundingBox(2)+PPCropparams(1).BoundingBox(4)),floor(PPCropparams(1).BoundingBox(1))-2:ceil(PPCropparams(1).BoundingBox(1)+PPCropparams(1).BoundingBox(3))+4);
+        PressureData(q).Peak_regions(1,1) = max(max(Peakformasking.*HAmask));
+        PressureData(q).Peak_regions(2,1) = max(max(Peakformasking.*Tmask));
+        PressureData(q).Peak_regions(3,1) = max(max(Peakformasking.*M1mask));
+        PressureData(q).Peak_regions(4,1) = max(max(Peakformasking.*M2mask));
+        PressureData(q).Peak_regions(5,1) = max(max(Peakformasking.*M3mask));
+        PressureData(q).Peak_regions(6,1) = max(max(Peakformasking.*M4mask));
+        PressureData(q).Peak_regions(7,1) = max(max(Peakformasking.*M5mask));
+        PressureData(q).Peak_regions(8,1) = max(max(Peakformasking.*LMmask));
+        PressureData(q).Peak_regions(9,1) = max(max(Peakformasking.*MMmask));
+        PressureData(q).Peak_regions(10,1) = max(max(Peakformasking.*HFmask));
+        
+        PTIformasking=PressureData(q).PTI(floor(PPCropparams(1).BoundingBox(2)):ceil(PPCropparams(1).BoundingBox(2)+PPCropparams(1).BoundingBox(4)),floor(PPCropparams(1).BoundingBox(1))-2:ceil(PPCropparams(1).BoundingBox(1)+PPCropparams(1).BoundingBox(3))+4);
+        PressureData(q).PTI_regions(1) = sum(sum(PTIformasking.*HAmask));
+        PressureData(q).PTI_regions(2) = sum(sum(PTIformasking.*Tmask));
+        PressureData(q).PTI_regions(3) = sum(sum(PTIformasking.*M1mask));
+        PressureData(q).PTI_regions(4) = sum(sum(PTIformasking.*M2mask));
+        PressureData(q).PTI_regions(5) = sum(sum(PTIformasking.*M3mask));
+        PressureData(q).PTI_regions(6) = sum(sum(PTIformasking.*M4mask));
+        PressureData(q).PTI_regions(7) = sum(sum(PTIformasking.*M5mask));
+        PressureData(q).PTI_regions(8) = sum(sum(PTIformasking.*LMmask));
+        PressureData(q).PTI_regions(9) = sum(sum(PTIformasking.*MMmask));
+        PressureData(q).PTI_regions(10) = sum(sum(PTIformasking.*HFmask));
+        
+        % not sure if should convert zeros to NaN for this?
+        PTIformasking(PTIformasking<1)=NaN;
+        PressureData(q).PTI_F_regions(1) = mean(PTIformasking.*HAmask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(2) = mean(PTIformasking.*Tmask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(3) = mean(PTIformasking.*M1mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(4) = mean(PTIformasking.*M2mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(5) = mean(PTIformasking.*M3mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(6) = mean(PTIformasking.*M4mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(7) = mean(PTIformasking.*M5mask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(8) = mean(PTIformasking.*LMmask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(9) = mean(PTIformasking.*MMmask,'all', 'omitnan');
+        PressureData(q).PTI_F_regions(10) = mean(PTIformasking.*HFmask,'all', 'omitnan');
+        
+        FTIformasking=PressureData(q).FTI(floor(PPCropparams(1).BoundingBox(2)):ceil(PPCropparams(1).BoundingBox(2)+PPCropparams(1).BoundingBox(4)),floor(PPCropparams(1).BoundingBox(1))-2:ceil(PPCropparams(1).BoundingBox(1)+PPCropparams(1).BoundingBox(3))+4);
+        PressureData(q).FTI_regions(1) = sum(sum(FTIformasking.*HAmask));
+        PressureData(q).FTI_regions(2) = sum(sum(FTIformasking.*Tmask));
+        PressureData(q).FTI_regions(3) = sum(sum(FTIformasking.*M1mask));
+        PressureData(q).FTI_regions(4) = sum(sum(FTIformasking.*M2mask));
+        PressureData(q).FTI_regions(5) = sum(sum(FTIformasking.*M3mask));
+        PressureData(q).FTI_regions(6) = sum(sum(FTIformasking.*M4mask));
+        PressureData(q).FTI_regions(7) = sum(sum(FTIformasking.*M5mask));
+        PressureData(q).FTI_regions(8) = sum(sum(FTIformasking.*LMmask));
+        PressureData(q).FTI_regions(9) = sum(sum(FTIformasking.*MMmask));
+        PressureData(q).FTI_regions(10) = sum(sum(FTIformasking.*HFmask));
+        
+        PressureData(q).maskarea(1) = sum(sum((PTIformasking.*HAmask)>0));
+        PressureData(q).maskarea(2) = sum(sum((PTIformasking.*Tmask)>0));
+        PressureData(q).maskarea(3) = sum(sum((PTIformasking.*M1mask)>0));
+        PressureData(q).maskarea(4) = sum(sum((PTIformasking.*M2mask)>0));
+        PressureData(q).maskarea(5) = sum(sum((PTIformasking.*M3mask)>0));
+        PressureData(q).maskarea(6) = sum(sum((PTIformasking.*M4mask)>0));
+        PressureData(q).maskarea(7) = sum(sum((PTIformasking.*M5mask)>0));
+        PressureData(q).maskarea(8) = sum(sum((PTIformasking.*LMmask)>0));
+        PressureData(q).maskarea(9) = sum(sum((PTIformasking.*MMmask)>0));
+        PressureData(q).maskarea(10) = sum(sum((PTIformasking.*HFmask)>0));
+        
+        PressureData(q).RegionOrder = {'HA', 'Toes', 'M1', 'M2', 'M3','M4','M5','LM','MM','HF'};      
+end
+
+trialnumidx1=strfind(PPfile, '_');
+trialnumidx2=strfind(PPfile, '.');
+PressureData(q).Trial = str2num(PPfile(trialnumidx1+1:trialnumidx2-1));
+PressureData(q).TrialType=trial_type;
+saveas(figure(8),[PPpath PPfile(1:end-4) '_CTMaskOverlay9.jpg']); close(figure(8))
+saveas(figure(2),[PPpath PPfile(1:end-4) '_CTProjOverlay9.jpg']); close(figure(2))
+ if ishandle(9) 
+     figure(9), set(gcf, 'Position', [200 100 1250 590])
+     saveas(figure(9),[PPpath PPfile(1:end-4) '_CTMaskPGA_MPPG9.jpg']); close(figure(9))
+end
+
+end
+
+for r=1:length(file_n_s)
+forexcel(r,:) = [00,PressureData(r).Peak_regions', 1234567 ,PressureData(r).FTI_regions,1234567 ,PressureData(r).PTI_F_regions];
+end
+for g=1:length(file_n_d)
+forexcel(r+g,:) = [11, PressureData(r+g).Peak_regions',1234567 ,PressureData(r+g).FTI_regions,1234567,PressureData(r+g).PTI_F_regions];
+end
+
+
+save( [PPpath 'ProcessedEmedData_alltrials.mat'],'PressureData');
+
+save( [PPpath 'CT_forExcel.mat'],'forexcel');
+
+
