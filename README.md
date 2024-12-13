@@ -3,7 +3,7 @@ Code used to evaluate plantar pressure data based on segmented CT scans. Pulishe
 
 
 ## Why did we make this?
-
+Plantar pressure is a commonly reported measurement of foot function. Plantar pressure has been associated with a variety of conditions affecting foot health including diabetes, foot bone anomalies, and heel pain. We created this code as part of a multimodal analysis of foot function changes assocaited with diabetes. However, our lab also performs a number of biplanar flouroscopy, gait, and gait simulation studies that require CT scans, meaning that we often have segmented scans for our studies. In an effort to improve the flexibility of plantar pressure summary variables and save processing time, we created this automated plantar pressure processing method with pressure regions derived from bony anatomy. For additional context, please see our published paper in [*Gait & Posture*.](https://doi.org/10.1016/j.gaitpost.2024.04.015)
 
 ## Features included
 * Peak pressure 
