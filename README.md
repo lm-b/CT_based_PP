@@ -25,7 +25,9 @@ Plantar pressure is a commonly reported measurement of foot function. Plantar pr
 This program takes a volumetric bony scan of the foot with pre-segmented bone overlays and uses the bone geometry to compute a 10-region plantar pressure mask (Hallux, toes, 5 metatarsal heads, lateral and medial midfoot, hindfoot). This mask is then applied to any number of user-input plantar pressure files to compute common static and dynamic plantar pressure metrics as well as several less common metrics. These metrics are then saved as .mat files. 
 
 ### Operating the program
-There are two files. The first performs the computation, the second can be used to aggregate ouputs from multiple subjects. Upon running the program, a window will pop up, asking you to select your CT image files, then your static and dynamic plantar pressure files. 
+The main file generates the plantar mask, calculates the summary variables, and saves the summary variables for each mask region into both matlab and excel readable files. Upon running the program, a window will pop up, asking you to select your CT image files, then your static and dynamic plantar pressure files. The program will then run automatically, generating a few plots along the way to check that the program is running as expected (e.g. the mask is calculated corrrectly). **This program requires substantial RAM as it holds the full CT scan in memory.**
+
+The main file is supported by functions in the support_files folder. The support_files folder also includes programs to aggregate the outputs of the main file for summarizing multiple subjects' data. 
 
 ### Troubleshooting
 There are two main areas where the code may fail: 
