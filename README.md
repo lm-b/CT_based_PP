@@ -1,5 +1,5 @@
 # CT-based Plantar Pressure Analysis
-Code used to evaluate plantar pressure data based on segmented CT scans. Pulished in [*Gait & Posture*, 2024](https://doi.org/10.1016/j.gaitpost.2024.04.015)
+Code used to evaluate plantar pressure data based on segmented CT scans. Pulished as *A method for automated masking and plantar pressure analysis using segmented computed tomography scans* in [*Gait & Posture*, 2024](https://doi.org/10.1016/j.gaitpost.2024.04.015)
 
 
 ## Why did we make this?
